@@ -113,6 +113,10 @@ private:
         wordHashSet patchNames_;
 
         HashTable<nFacePrimitives> nPatchPrims_;
+        
+        int nQuads_;
+        int nTris_;
+        int nPolys_;
 
         // faceZone - related variables
         List<faceSets> faceZoneFaceSets_;
@@ -252,6 +256,15 @@ private:
             const char *meshname,
             const int medfileid
         ) const;
+
+        void writeFamilies
+        (
+         const med_geometry_type key,
+         const int nelems,
+         const med_int *families,
+         const char* meshname,
+         const int medfileid
+         )const;
 
 public:
 

@@ -255,6 +255,17 @@ void Foam::MEDMesh::correct()
         nPatchPrims_.insert(patchName, nfp);
     }
 
+    nTris_ = 0;
+    nQuads_ = 0;
+    nPolys_ = 0;
+    forAll(allPatchNames_, patchi)
+    {
+        const word& patchName = allPatchNames_[patchi];
+        nTris_ += nPatchPrims_[patchName].nTris;
+        nQuads_ += nPatchPrims_[patchName].nQuads;
+        nPolys_ += nPatchPrims_[patchName].nPolys;
+    }
+
     // faceZones
     if (faceZones_)
     {
@@ -665,6 +676,27 @@ void Foam::MEDMesh::writeAllPrims
 }
 
 
+void Foam::MEDMesh::writeFamilies
+(
+ const med_geometry_type key,
+ const int nelems,
+ const med_int *families,
+ const char* meshname,
+ const int medfileid
+ )const
+{
+    if (nelems > 0)
+    {
+        med_err ret = MEDmeshEntityFamilyNumberWr(
+                medfileid, meshname,MED_NO_DT,MED_NO_IT, MED_CELL,
+                key,nelems,families);
+        if (ret!=0)
+            Info << "failed to write families for " << key << endl;
+        else
+            Info << "wrote families for " << key << endl;
+    }
+}
+
 void Foam::MEDMesh::writeFacePrims
 (
     const med_geometry_type key,
@@ -683,7 +715,9 @@ void Foam::MEDMesh::writeFacePrims
         {
             const face& patchFace = patchFaces[i];
             forAll(patchFace, pointI)
+            {
                 temp[c++] = patchFace[pointI] + 1;
+            }
         }
         med_err ret = MEDmeshElementConnectivityWr(
                 medfileid, meshname,MED_NO_DT,MED_NO_IT,MED_NO_DT, MED_CELL,
@@ -871,74 +905,99 @@ void Foam::MEDMesh::write
         );
     }
 
+    // now write the patches
+    // first we collect all the different facestypes oft the patches and write
+    // them to the med file
+    // then we write the patchnumbers as familynumbers
+    // and finally we write the familyinfo with the patchname as the groupname
+    labelList *trisPtr = new labelList(nTris_);
+    labelList &tris = *trisPtr;
+    med_int *trifams = new med_int[nTris_];
+    int tric = 0;
 
-    //forAll(allPatchNames_, patchi)
-    //{
-        //const word& patchName = allPatchNames_[patchi];
+    labelList *quadsPtr = new labelList(nQuads_);
+    labelList &quads = *quadsPtr;
+    med_int *quadfams = new med_int[nQuads_];
+    int quadc = 0;
 
-        //if (patchNames_.empty() || patchNames_.found(patchName))
-        //{
-            //const nFacePrimitives& nfp = nPatchPrims_[patchName];
+    labelList *polysPtr = new labelList(nPolys_);
+    labelList &polys = *polysPtr;
+    med_int *polyfams = new med_int[nPolys_];
+    int polyc = 0;
 
-            //if (nfp.nTris || nfp.nQuads || nfp.nPolys)
-            //{
-                //const polyPatch& p = mesh_.boundaryMesh()[patchi];
+    const faceList& faces = mesh_.faces();
 
-                //const labelList& tris = boundaryFaceSets_[patchi].tris;
-                //const labelList& quads = boundaryFaceSets_[patchi].quads;
-                //const labelList& polys = boundaryFaceSets_[patchi].polys;
+    forAll(allPatchNames_, patchi)
+    {
+        const word& patchName = allPatchNames_[patchi];
+        const polyPatch& p = mesh_.boundaryMesh()[patchi];
+        const int end = p.start()+p.size();
+        for(int i=p.start(); i < end ; i++)
+        {
+            if (faces[i].size() == 3)
+            {
+                tris[tric] = i;
+                trifams[tric++] = -1*(patchi+1);
+            }
+            else if (faces[i].size() == 4)
+            {
+                quads[quadc] = i;
+                quadfams[quadc++] = -1*(patchi+1);
+            }
+            else
+            {
+                polys[polyc] = i;
+                polyfams[polyc++] = -1*(patchi+1);
+            }
+        }
 
-                //// Renumber the patch points/faces into unique points
-                //labelList pointToGlobal;
-                //labelList uniqueMeshPointLabels;
-                //autoPtr<globalIndex> globalPointsPtr =
-                    //mesh_.globalData().mergePoints
-                    //(
-                        //p.meshPoints(),
-                        //p.meshPointMap(),
-                        //pointToGlobal,
-                        //uniqueMeshPointLabels
-                    //);
+    }
 
-                //pointField uniquePoints(mesh_.points(), uniqueMeshPointLabels);
-                //// Renumber the patch faces
-                //faceList patchFaces(p.localFaces());
-                //forAll(patchFaces, i)
-                //{
-                    //inplaceRenumber(pointToGlobal, patchFaces[i]);
-                //}
+    writeAllFacePrims(MED_TRIA3,tris,tric,faces,meshname,medfileid);
+    writeAllFacePrims(MED_QUAD4,quads,quadc,faces,meshname,medfileid);
+    writeAllFacePrims(MED_POLYGON,polys,polyc,faces,meshname,medfileid);
+    writeFamilies(MED_TRIA3,tric,trifams,meshname,medfileid);
+    writeFamilies(MED_QUAD4,quadc,quadfams,meshname,medfileid);
+    writeFamilies(MED_POLYGON,polyc,polyfams,meshname,medfileid);
 
-                //writeAllFacePrims
-                //(
-                    //MED_TRIA3,
-                    //tris,
-                    //nfp.nTris,
-                    //patchFaces,
-                    //meshname,
-                    //medfileid
-                //);
+    med_err ret;
+    int famnum;
+    char familyname[MED_NAME_SIZE];
+    char patchname[MED_LNAME_SIZE];
+    forAll(allPatchNames_, patchi)
+    {
+        const word& patchName = allPatchNames_[patchi];
+        famnum = -1*(patchi+1);
+        std::string fname = "FAM_"+std::to_string(famnum);
+        for(unsigned int i=0;i<MED_NAME_SIZE;i++)
+        {
+            if (i<fname.size())
+                familyname[i] = fname[i];
+            else
+                familyname[i] = '\0';
+        }
+        for(unsigned int i=0;i<MED_LNAME_SIZE;i++)
+        {
+            if (i<patchName.size())
+                patchname[i] = patchName[i];
+            else
+                patchname[i] = '\0';
+        }
+        ret = MEDfamilyCr
+            (
+            medfileid,
+            meshname,
+            familyname,
+            famnum,
+            1,
+            patchname
+            );
+        if (ret != 0)
+            Info << "failed to write familyinfo for patch " << patchName << endl;
+        else
+            Info << "wrote familyinfo for patch " << patchName << endl;
+   }
 
-                //writeAllFacePrims
-                //(
-                    //MED_QUAD4,
-                    //quads,
-                    //nfp.nQuads,
-                    //patchFaces,
-                    //meshname,
-                    //medfileid
-                //);
-
-                //writeAllPolygons
-                //(
-                    //polys,
-                    //nfp.nPolys,
-                    //patchFaces,
-                    //meshname,
-                    //medfileid
-                //);
-            //}
-        //}
-    //}
 
   /*  // write faceZones, if requested*/
     //forAllConstIter(wordHashSet, faceZoneNames_, iter)
