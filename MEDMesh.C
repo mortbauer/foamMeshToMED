@@ -40,6 +40,14 @@ License
 #include <med.h>
 
 // * * * * * * * * * * * * * Private Functions * * * * * * * * * * * * * * //
+const Foam::label Foam::MEDMesh::foamToMEDNodeAddr[4][8] =
+{
+    { 5, 6, 7, 4, 1, 2, 3, 0 },     // 11 = pro-STAR hex
+    { 1, 0, 2, 4, 3, 5,-1,-1 },    // 12 = pro-STAR prism
+    { 1, 0, 2, 3,-1,-1,-1,-1 },   // 13 = pro-STAR tetra
+    { 3, 2, 1, 0, 4,-1,-1,-1 }     // 14 = pro-STAR pyramid
+};
+
 
 void Foam::MEDMesh::correct()
 {
@@ -522,6 +530,7 @@ void Foam::MEDMesh::writePrims
 (
     const med_geometry_type key,
     const cellShapeList& cellShapes,
+    const label *mapping,
     const char *meshname,
     const int medfileid
 ) const
@@ -534,13 +543,12 @@ void Foam::MEDMesh::writePrims
         int nnodes = cellShapes[0].size();
         int *temp = new med_int[nelems*nnodes];
         
-        int n = 0;
         forAll(cellShapes, i)
         {
             const cellShape& cellPoints = cellShapes[i];
             forAll(cellPoints, pointI)
             {
-                temp[n++] = cellPoints[pointI] + 1;
+                temp[i*nnodes+mapping[pointI]] = cellPoints[pointI] + 1;
             }
         }
         med_err ret = MEDmeshElementConnectivityWr(
@@ -664,13 +672,14 @@ void Foam::MEDMesh::writeAllPrims
     const med_geometry_type key,
     const int nPrisms,
     const cellShapeList& cellShapes,
+    const label *mapping,
     const char* meshname,
     const int medfileid
 ) const
 {
     if (nPrisms)
     {
-        writePrims(key,cellShapes, meshname,medfileid);
+        writePrims(key,cellShapes,mapping, meshname,medfileid);
 
     }
 }
@@ -865,6 +874,7 @@ void Foam::MEDMesh::write
                 meshCellSets_.wedges,
                 pointToGlobal_
             ),
+            foamToMEDNodeAddr[0],
             meshname,
             medfileid
         );
@@ -874,6 +884,7 @@ void Foam::MEDMesh::write
             MED_PENTA6,
             meshCellSets_.nPrisms,
             map(cellShapes, meshCellSets_.prisms, pointToGlobal_),
+            foamToMEDNodeAddr[1],
             meshname,
             medfileid
         );
@@ -883,6 +894,7 @@ void Foam::MEDMesh::write
             MED_PYRA5,
             meshCellSets_.nPyrs,
             map(cellShapes, meshCellSets_.pyrs, pointToGlobal_),
+            foamToMEDNodeAddr[3],
             meshname,
             medfileid
         );
@@ -892,6 +904,7 @@ void Foam::MEDMesh::write
             MED_TETRA4,
             meshCellSets_.nTets,
             map(cellShapes, meshCellSets_.tets, pointToGlobal_),
+            foamToMEDNodeAddr[2],
             meshname,
             medfileid
         );

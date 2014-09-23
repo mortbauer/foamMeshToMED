@@ -84,6 +84,8 @@ public:
 private:
 
     // Private data
+        // cell node mapping
+        static const label foamToMEDNodeAddr[4][8];
         //- Reference to the OpenFOAM mesh
         const fvMesh& mesh_;
 
@@ -175,6 +177,7 @@ private:
         (
             const med_geometry_type key,
             const cellShapeList& cellShapes,
+            const label *mapping,
             const char *meshname,
             const int medfileid
         ) const;
@@ -218,6 +221,7 @@ private:
             const med_geometry_type key,
             const label nPrims,
             const cellShapeList& cellShapes,
+            const label *mapping,
             const char *meshname,
             const int medfileid
         ) const;
