@@ -383,7 +383,6 @@ public:
 
         void write
         (
-            const fileName& postProcPath,
             const label timeIndex,
             const bool meshMoving,
             const char * meshname,

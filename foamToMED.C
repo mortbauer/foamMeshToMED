@@ -145,20 +145,6 @@ int main(int argc, char *argv[])
 
     #include "createNamedMesh.H"
 
-    // Path to MED directory at case level only
-    // - For parallel cases, data only written from master
-    fileName medDir = args.rootPath()/args.globalCaseName()/"MED";
-
-    if (Pstream::master())
-    {
-        if (isDir(medDir))
-        {
-            rmDir(medDir);
-        }
-
-        mkDir(medDir);
-    }
-
     // Start of case file header output
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -167,7 +153,7 @@ int main(int argc, char *argv[])
     med_err ret;
 
     Info<< "Createing MEDfile" << endl;
-    const med_idt medfile = MEDfileOpen((medDir/prepend+"med").c_str(),MED_ACC_CREAT);
+    const med_idt medfile = MEDfileOpen((prepend+"med").c_str(),MED_ACC_CREAT);
 
     if (medfile < 0)
         Info << "failed to open the med file" << endl;
@@ -180,7 +166,7 @@ int main(int argc, char *argv[])
         Info << "failed to write comments" << endl;
 
     Info<< "Creating Mesh" << endl;
-    char meshname[] = "polymesh";
+    const char *meshname = args.globalCaseName().c_str();
     std::string description ("created by OpenFOAM",MED_COMMENT_SIZE);
     std::string dtunit ("s",MED_SNAME_SIZE);
     std::string axis_x ("x",MED_SNAME_SIZE);
@@ -301,7 +287,6 @@ int main(int argc, char *argv[])
         {
             eMesh.write
             (
-                medDir,
                 timeIndex,
                 meshMoving,
                 meshname,
