@@ -37,6 +37,7 @@ License
 #include "stringListOps.H"
 
 #include <fstream>
+#include <cassert> 
 #include <med.h>
 
 // * * * * * * * * * * * * * Private Functions * * * * * * * * * * * * * * //
@@ -241,166 +242,27 @@ void Foam::MEDMesh::correct()
         }
     }
 
-    forAll(allPatchNames_, patchi)
-    {
-        const word& patchName = allPatchNames_[patchi];
-        nFacePrimitives nfp;
-
-        if (patchNames_.empty() || patchNames_.found(patchName))
-        {
-            if (mesh_.boundary()[patchi].size())
-            {
-                nfp.nTris   = boundaryFaceSets_[patchi].tris.size();
-                nfp.nQuads  = boundaryFaceSets_[patchi].quads.size();
-                nfp.nPolys  = boundaryFaceSets_[patchi].polys.size();
-            }
-        }
-
-        reduce(nfp.nTris, sumOp<label>());
-        reduce(nfp.nQuads, sumOp<label>());
-        reduce(nfp.nPolys, sumOp<label>());
-
-        nPatchPrims_.insert(patchName, nfp);
-    }
-
     nTris_ = 0;
     nQuads_ = 0;
     nPolys_ = 0;
     forAll(allPatchNames_, patchi)
     {
         const word& patchName = allPatchNames_[patchi];
-        nTris_ += nPatchPrims_[patchName].nTris;
-        nQuads_ += nPatchPrims_[patchName].nQuads;
-        nPolys_ += nPatchPrims_[patchName].nPolys;
+        nFacePrimitives nfp;
+
+        if (mesh_.boundary()[patchi].size())
+        {
+            nfp.nTris   = boundaryFaceSets_[patchi].tris.size();
+            nfp.nQuads  = boundaryFaceSets_[patchi].quads.size();
+            nfp.nPolys  = boundaryFaceSets_[patchi].polys.size();
+            nTris_ += nfp.nTris;
+            nQuads_ += nfp.nQuads;
+            nPolys_ += nfp.nPolys;
+        }
+
+        nPatchPrims_.insert(patchName, nfp);
     }
-
-    // faceZones
-    if (faceZones_)
-    {
-        wordList faceZoneNamesAll = mesh_.faceZones().names();
-        // Need to sort the list of all face zones since the index may vary
-        // from processor to processor...
-        sort(faceZoneNamesAll);
-
-        // Find faceZone names which match that requested at command-line
-        forAll(faceZoneNamesAll, nameI)
-        {
-            const word& zoneName = faceZoneNamesAll[nameI];
-            if (findStrings(faceZonePatterns_, zoneName))
-            {
-                faceZoneNames_.insert(zoneName);
-            }
-        }
-
-        // Build list of boundary faces to be exported
-        boundaryFaceToBeIncluded_.setSize
-        (
-            mesh_.nFaces()
-          - mesh_.nInternalFaces(),
-            1
-        );
-
-        forAll(mesh_.boundaryMesh(), patchI)
-        {
-            const polyPatch& pp = mesh_.boundaryMesh()[patchI];
-            if
-            (
-                isA<processorPolyPatch>(pp)
-             && !refCast<const processorPolyPatch>(pp).owner()
-            )
-            {
-                label bFaceI = pp.start()-mesh_.nInternalFaces();
-                forAll(pp, i)
-                {
-                    boundaryFaceToBeIncluded_[bFaceI++] = 0;
-                }
-            }
-        }
-
-        // Count face types in each faceZone
-        forAll(faceZoneNamesAll, zoneI)
-        {
-            const word& zoneName = faceZoneNamesAll[zoneI];
-            const label faceZoneId = mesh_.faceZones().findZoneID(zoneName);
-
-            const faceZone& fz = mesh_.faceZones()[faceZoneId];
-
-            if (fz.size())
-            {
-                labelList& tris = faceZoneFaceSets_[faceZoneId].tris;
-                labelList& quads = faceZoneFaceSets_[faceZoneId].quads;
-                labelList& polys = faceZoneFaceSets_[faceZoneId].polys;
-
-                tris.setSize(fz.size());
-                quads.setSize(fz.size());
-                polys.setSize(fz.size());
-
-                label nTris = 0;
-                label nQuads = 0;
-                label nPolys = 0;
-
-                label faceCounter = 0;
-
-                forAll(fz, i)
-                {
-                    label faceI = fz[i];
-
-                    // Avoid counting faces on processor boundaries twice
-                    if (faceToBeIncluded(faceI))
-                    {
-                        const face& f = mesh_.faces()[faceI];
-
-                        if (f.size() == 3)
-                        {
-                            tris[nTris++] = faceCounter;
-                        }
-                        else if (f.size() == 4)
-                        {
-                            quads[nQuads++] = faceCounter;
-                        }
-                        else
-                        {
-                            polys[nPolys++] = faceCounter;
-                        }
-
-                        ++faceCounter;
-                    }
-                }
-
-                tris.setSize(nTris);
-                quads.setSize(nQuads);
-                polys.setSize(nPolys);
-            }
-        }
-
-        forAll(faceZoneNamesAll, zoneI)
-        {
-            const word& zoneName = faceZoneNamesAll[zoneI];
-            nFacePrimitives nfp;
-            const label faceZoneId = mesh_.faceZones().findZoneID(zoneName);
-
-            if (faceZoneNames_.found(zoneName))
-            {
-                if
-                (
-                    faceZoneFaceSets_[faceZoneId].tris.size()
-                 || faceZoneFaceSets_[faceZoneId].quads.size()
-                 || faceZoneFaceSets_[faceZoneId].polys.size()
-                )
-                {
-                    nfp.nTris   = faceZoneFaceSets_[faceZoneId].tris.size();
-                    nfp.nQuads  = faceZoneFaceSets_[faceZoneId].quads.size();
-                    nfp.nPolys  = faceZoneFaceSets_[faceZoneId].polys.size();
-                }
-            }
-
-            reduce(nfp.nTris, sumOp<label>());
-            reduce(nfp.nQuads, sumOp<label>());
-            reduce(nfp.nPolys, sumOp<label>());
-
-            nFaceZonePrims_.insert(zoneName, nfp);
-        }
-    }
+   
 }
 
 
@@ -720,6 +582,7 @@ void Foam::MEDMesh::writeFacePrims
         int nnodes = patchFaces[0].size();
         med_int *temp = new med_int[nelems*nnodes];
         int c = 0;
+        Info << "going throught the data" << endl;
         forAll(patchFaces, i)
         {
             const face& patchFace = patchFaces[i];
@@ -728,6 +591,7 @@ void Foam::MEDMesh::writeFacePrims
                 temp[c++] = patchFace[pointI] + 1;
             }
         }
+        Info << "writing to med" << endl;
         med_err ret = MEDmeshElementConnectivityWr(
                 medfileid, meshname,MED_NO_DT,MED_NO_IT,MED_NO_DT, MED_CELL,
                 key, MED_NODAL,MED_FULL_INTERLACE, nelems,temp);
@@ -755,6 +619,7 @@ void Foam::MEDMesh::writeAllFacePrims
 {
     if (nPrims)
     {
+        Info << "doing to write face prisms for " << key << endl;
         writeFacePrims(
                 key,
                 UIndirectList<face>(patchFaces, prims)(),
@@ -774,6 +639,22 @@ void Foam::MEDMesh::writeAllPolygons
 ) const
 {
     if (nPrims)
+    {
+        writePolygons(
+                UIndirectList<face>(patchFaces, prims)(),
+                meshname,
+                medfileid);
+    }
+}
+
+void Foam::MEDMesh::writePolygons
+(
+    const faceList& patchFaces,
+    const char* meshname,
+    const int medfileid
+) const
+{
+    if (patchFaces.size())
     {
         int nelems = patchFaces.size();
         med_int *temp_idx = new med_int[nelems+1];
@@ -812,6 +693,7 @@ void Foam::MEDMesh::writeAllPoints
 (
     const pointField& uniquePoints,
     const label nPoints,
+    const double scale,
     const char *meshname,
     const int medfileid
 ) const
@@ -823,9 +705,9 @@ void Foam::MEDMesh::writeAllPoints
 
     forAll(uniquePoints, pointI)
     {
-        tmp[pointI*3] = uniquePoints[pointI].x();
-        tmp[pointI*3+1] = uniquePoints[pointI].y();
-        tmp[pointI*3+2] = uniquePoints[pointI].z();
+        tmp[pointI*3] = uniquePoints[pointI].x()*scale;
+        tmp[pointI*3+1] = uniquePoints[pointI].y()*scale;
+        tmp[pointI*3+2] = uniquePoints[pointI].z()*scale;
     }
 
     MEDmeshNodeCoordinateWr(
@@ -841,6 +723,7 @@ void Foam::MEDMesh::write
 (
     const label timeIndex,
     const bool meshMoving,
+    const double scale,
     const char * meshname,
     const int medfileid
 ) const
@@ -859,6 +742,7 @@ void Foam::MEDMesh::write
         (
             uniquePoints,
             nPoints,
+            scale,
             meshname,
             medfileid
         );
@@ -922,6 +806,8 @@ void Foam::MEDMesh::write
     // them to the med file
     // then we write the patchnumbers as familynumbers
     // and finally we write the familyinfo with the patchname as the groupname
+    Info << "going to write face patches to med "  << endl;
+
     labelList *trisPtr = new labelList(nTris_);
     labelList &tris = *trisPtr;
     med_int *trifams = new med_int[nTris_];
@@ -938,40 +824,47 @@ void Foam::MEDMesh::write
     int polyc = 0;
 
     const faceList& faces = mesh_.faces();
-
-    forAll(allPatchNames_, patchi)
+  
+    forAll(mesh_.boundary(), patchi)
     {
-        const word& patchName = allPatchNames_[patchi];
-        const polyPatch& p = mesh_.boundaryMesh()[patchi];
-        const int end = p.start()+p.size();
-        for(int i=p.start(); i < end ; i++)
+        if (mesh_.boundary()[patchi].size())
         {
-            if (faces[i].size() == 3)
+            const polyPatch& p = mesh_.boundaryMesh()[patchi];
+            forAll(p, faceI)
             {
-                tris[tric] = i;
-                trifams[tric++] = -1*(patchi+1);
+                const face& f = p[faceI];
+                if (f.size() == 3)
+                {
+                    tris[tric] = faceI+p.start();
+                    trifams[tric++] = -1*(patchi+1);
+                }
+                else if (f.size() == 4)
+                {
+                    quads[quadc] = faceI+p.start();
+                    quadfams[quadc++] = -1*(patchi+1);
+                }
+                else
+                {
+                    polys[polyc] = faceI+p.start();
+                    polyfams[polyc++] = -1*(patchi+1);
+                }
             }
-            else if (faces[i].size() == 4)
-            {
-                quads[quadc] = i;
-                quadfams[quadc++] = -1*(patchi+1);
-            }
-            else
-            {
-                polys[polyc] = i;
-                polyfams[polyc++] = -1*(patchi+1);
-            }
-        }
+        } 
 
     }
-
     writeAllFacePrims(MED_TRIA3,tris,tric,faces,meshname,medfileid);
-    writeAllFacePrims(MED_QUAD4,quads,quadc,faces,meshname,medfileid);
-    writeAllFacePrims(MED_POLYGON,polys,polyc,faces,meshname,medfileid);
     writeFamilies(MED_TRIA3,tric,trifams,meshname,medfileid);
+    writeAllFacePrims(MED_QUAD4,quads,quadc,faces,meshname,medfileid);
     writeFamilies(MED_QUAD4,quadc,quadfams,meshname,medfileid);
+    writeAllPolygons(polys,polyc,faces,meshname,medfileid);
     writeFamilies(MED_POLYGON,polyc,polyfams,meshname,medfileid);
+    
+    delete[] trifams;
+    delete[] quadfams;
+    delete[] polyfams;
 
+    Info << "going to write families" << endl;
+    // now lets write the familyinfo
     med_err ret;
     int famnum;
     char familyname[MED_NAME_SIZE];
@@ -979,137 +872,41 @@ void Foam::MEDMesh::write
     forAll(allPatchNames_, patchi)
     {
         const word& patchName = allPatchNames_[patchi];
-        famnum = -1*(patchi+1);
-        std::string fname = "FAM_"+std::to_string(famnum);
-        for(unsigned int i=0;i<MED_NAME_SIZE;i++)
+        const polyPatch& p = mesh_.boundaryMesh()[patchi];
+        if (p.size())
         {
-            if (i<fname.size())
-                familyname[i] = fname[i];
+            famnum = -1*(patchi+1);
+            std::string fname = "FAM_"+std::to_string(famnum);
+            for(unsigned int i=0;i<MED_NAME_SIZE;i++)
+            {
+                if (i<fname.size())
+                    familyname[i] = fname[i];
+                else
+                    familyname[i] = '\0';
+            }
+            for(unsigned int i=0;i<MED_LNAME_SIZE;i++)
+            {
+                if (i<patchName.size())
+                    patchname[i] = patchName[i];
+                else
+                    patchname[i] = '\0';
+            }
+            ret = MEDfamilyCr
+                (
+                medfileid,
+                meshname,
+                familyname,
+                famnum,
+                1,
+                patchname
+                );
+            if (ret != 0)
+                Info << "failed to write familyinfo for patch " << patchName << endl;
             else
-                familyname[i] = '\0';
+                Info << "wrote familyinfo for patch " << patchName << endl;
         }
-        for(unsigned int i=0;i<MED_LNAME_SIZE;i++)
-        {
-            if (i<patchName.size())
-                patchname[i] = patchName[i];
-            else
-                patchname[i] = '\0';
-        }
-        ret = MEDfamilyCr
-            (
-            medfileid,
-            meshname,
-            familyname,
-            famnum,
-            1,
-            patchname
-            );
-        if (ret != 0)
-            Info << "failed to write familyinfo for patch " << patchName << endl;
-        else
-            Info << "wrote familyinfo for patch " << patchName << endl;
    }
-
-
-  /*  // write faceZones, if requested*/
-    //forAllConstIter(wordHashSet, faceZoneNames_, iter)
-    //{
-        //const word& faceZoneName = iter.key();
-
-        //label faceID = mesh_.faceZones().findZoneID(faceZoneName);
-
-        //const faceZone& fz = mesh_.faceZones()[faceID];
-
-        //const nFacePrimitives& nfp = nFaceZonePrims_[faceZoneName];
-
-        //if (nfp.nTris || nfp.nQuads || nfp.nPolys)
-        //{
-            //const labelList& tris = faceZoneFaceSets_[faceID].tris;
-            //const labelList& quads = faceZoneFaceSets_[faceID].quads;
-            //const labelList& polys = faceZoneFaceSets_[faceID].polys;
-
-            //// Renumber the faceZone points/faces into unique points
-            //labelList pointToGlobal;
-            //labelList uniqueMeshPointLabels;
-            //autoPtr<globalIndex> globalPointsPtr =
-                //mesh_.globalData().mergePoints
-                //(
-                    //fz().meshPoints(),
-                    //fz().meshPointMap(),
-                    //pointToGlobal,
-                    //uniqueMeshPointLabels
-                //);
-
-            //pointField uniquePoints(mesh_.points(), uniqueMeshPointLabels);
-
-            //// Find the list of master faces belonging to the faceZone,
-            //// in local numbering
-            //faceList faceZoneFaces(fz().localFaces());
-
-            //// Count how many master faces belong to the faceZone. Is there
-            //// a better way of doing this?
-            //label nMasterFaces = 0;
-
-            //forAll(fz, faceI)
-            //{
-                //if (faceToBeIncluded(fz[faceI]))
-                //{
-                    //++nMasterFaces;
-                //}
-            //}
-
-            //// Create the faceList for the master faces only and fill it.
-            //faceList faceZoneMasterFaces(nMasterFaces);
-
-            //label currentFace = 0;
-
-            //forAll(fz, faceI)
-            //{
-                //if (faceToBeIncluded(fz[faceI]))
-                //{
-                    //faceZoneMasterFaces[currentFace] = faceZoneFaces[faceI];
-                    //++currentFace;
-                //}
-            //}
-
-            //// Renumber the faceZone master faces
-            //forAll(faceZoneMasterFaces, i)
-            //{
-                //inplaceRenumber(pointToGlobal, faceZoneMasterFaces[i]);
-            //}
-
-            //writeAllFacePrims
-            //(
-                //MED_TRIA3,
-                //tris,
-                //nfp.nTris,
-                //faceZoneMasterFaces,
-                //meshname,
-                //medfileid
-            //);
-
-            //writeAllFacePrims
-            //(
-                //MED_QUAD4,
-                //quads,
-                //nfp.nQuads,
-                //faceZoneMasterFaces,
-                //meshname,
-                //medfileid
-            //);
-
-            //writeAllPolygons
-            //(
-                //polys,
-                //nfp.nPolys,
-                //faceZoneMasterFaces,
-                //meshname,
-                //medfileid
-            //);
-        //}
-    //}
 
 }
 
 
-// ************************************************************************* //

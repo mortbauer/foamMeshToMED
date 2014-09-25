@@ -70,6 +70,7 @@ Note
 #include "fvMeshSubset.H"
 #include "itoa.H"
 #include <med.h>
+#include <stdlib.h>
 
 using namespace Foam;
 
@@ -97,47 +98,22 @@ bool inFileNameList
 int main(int argc, char *argv[])
 {
     timeSelector::addOptions();
-    #include "addRegionOption.H"
-
-    argList::addBoolOption
-    (
-        "ascii",
-        "write in ASCII format instead of 'C Binary'"
-    );
-    argList::addBoolOption
-    (
-        "nodeValues",
-        "write values in nodes"
-    );
-    argList::addBoolOption
-    (
-        "noPatches",
-        "suppress writing any patches"
-    );
     argList::addOption
     (
-        "patches",
-        "wordReList",
-        "specify particular patches to write - eg '(outlet \"inlet.*\")'. "
-        "An empty list suppresses writing the internalMesh."
-    );
-    argList::addOption
-    (
-        "faceZones",
-        "wordReList",
-        "specify faceZones to write - eg '( slice \"mfp-.*\" )'."
-    );
-    argList::addOption
-    (
-        "cellZone",
-        "word",
-        "specify cellZone to write"
+        "scale",
+        "double",
+        "specify scaling factor"
     );
 
     #include "setRootCase.H"
 
     // Check options
-    const bool binary = !args.optionFound("ascii");
+    const bool is_scale = args.optionFound("scale");
+    double scale;
+    if (is_scale)
+        scale = atof(args.option("scale").c_str());
+    else
+       scale = 1.0; 
 
     #include "createTime.H"
 
@@ -236,7 +212,7 @@ int main(int argc, char *argv[])
         patchPatterns,
         selectedZones,
         zonePatterns,
-        binary
+        false
     );
 
     // Set Time to the last time before looking for the lagrangian objects
@@ -289,6 +265,7 @@ int main(int argc, char *argv[])
             (
                 timeIndex,
                 meshMoving,
+                scale,
                 meshname,
                 medfile
             );

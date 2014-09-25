@@ -253,10 +253,18 @@ private:
             const int medfileid
         ) const;
 
+        void writePolygons
+        (
+            const faceList& patchFaces,
+            const char* meshname,
+            const int medfileid
+        ) const;
+
         void writeAllPoints
         (
             const pointField& uniquePoints,
             const label nPoints,
+            const double scale,
             const char *meshname,
             const int medfileid
         ) const;
@@ -389,6 +397,7 @@ public:
         (
             const label timeIndex,
             const bool meshMoving,
+            const double scale,
             const char * meshname,
             const int medfileid
         ) const;
