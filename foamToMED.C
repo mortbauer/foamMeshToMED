@@ -119,7 +119,18 @@ int main(int argc, char *argv[])
 
     instantList Times = timeSelector::select0(runTime, args);
 
-    #include "createNamedMesh.H"
+    Foam::word regionName = Foam::fvMesh::defaultRegion;
+
+    Foam::Info<< "Read the mesh\n" << Foam::endl;
+    Foam::fvMesh mesh
+    (
+        Foam::IOobject
+        (
+            regionName,
+            runTime.timeName(),
+            runTime
+        )
+    );
 
     // Start of case file header output
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -128,7 +139,7 @@ int main(int argc, char *argv[])
 
     med_err ret;
 
-    Info<< "Createing MEDfile" << endl;
+    Info<< "Creating MEDfile" << endl;
     const med_idt medfile = MEDfileOpen((prepend+"med").c_str(),MED_ACC_CREAT);
 
     if (medfile < 0)
